@@ -1,7 +1,6 @@
 # Telegram SSI Wallet (Starter)
 
-A minimal starter that implements a **Telegram WebApp wallet** which can **store credentials (JWT)** and, in the ideal flow, **authenticate against a Verifier (Week #2)** using Polygon ID js-sdk.
-
+A minimal starter that implements a **Telegram WebApp wallet** which can **store credentials (JWT or JSON-LD)** and, in the ideal flow, **authenticate against a Verifier (Week #2)** using Polygon ID js-sdk.
 > ✅ Out of the box: WebApp UI + Express server + SQLite storage + Telegram bot with "Open Wallet" button + Credential import/list.
 > 🔜 Plug in Polygon ID js-sdk (`@0xpolygonid/js-sdk`) in `sdk/polygonid.js` to generate real proofs for your verifier. A mock mode is included to let you wire the flow first.
 
@@ -52,7 +51,7 @@ Open Telegram, talk to your bot, press **Open Wallet** → it loads the WebApp h
   - `initdb.js` – one-time DB schema init
   - `bot.js` – Telegram bot that shows a WebApp button
 - **webapp/** – Minimal HTML/JS UI (no build toolchain)
-  - Import credential (paste JWT)
+  - Import credential (paste JWT or JSON-LD)
   - List stored credentials
   - Start **Verifier auth** by pasting `request_uri` (from your Week #2 verifier QR)
 
@@ -66,7 +65,7 @@ Open Telegram, talk to your bot, press **Open Wallet** → it loads the WebApp h
 
 - `POST /api/session` – Upserts a user by Telegram user id, returns a wallet DID (placeholder until js-sdk plugged in).
 - `GET /api/credentials` – List user credentials.
-- `POST /api/credentials/import` – Body `{ jwt }`. Stores the JWT and parsed header/payload for quick view.
+- `POST /api/credentials/import` – Body `{ credential }` (JWT string or JSON-LD object). Stores the credential and parsed header/payload for quick view.
 - `POST /api/auth` – Body `{ requestUri }`. With mocks: returns a dummy response. With js-sdk: generates real auth response and (optionally) POSTs to callback from the request.
 
 ---

@@ -7,7 +7,7 @@ dotenv.config();
 const fetch = global.fetch || require('node-fetch');
 
 const { ensureUser, getUserByTgId } = require('./users');
-const { importCredential, importCredentialAny, listCredentials } = require('./wallet');
+const { importCredentialAny, listCredentials } = require('./wallet');
 const { ensureDidForUser } = require('../sdk/identity'); // не трогаем
 // auth сейчас не нужен для DID/импорта, чтобы не падал — можно временно заглушить в sdk/polygonid.js
 const { authRequest } = require('../sdk/polygonid');
@@ -62,16 +62,19 @@ app.post('/api/session', async (req, res) => {
     }
 });
 
-/** Импорт JWT-креденшела вручную (то, что у тебя уже есть из direct issue) */
+/** Импорт существующего креденшела вручную (JWT или JSON-LD) */
 app.post('/api/credentials/import', (req, res) => {
     try {
-        const { tgUserId, jwt } = req.body || {};
-        if (!tgUserId || !jwt) return res.status(400).json({ error: 'tgUserId and jwt required' });
+        const { tgUserId, jwt, credential } = req.body || {};
+        if (!tgUserId) return res.status(400).json({ error: 'tgUserId required' });
 
         const user = getUserByTgId(String(tgUserId));
         if (!user) return res.status(404).json({ error: 'user not found' });
 
-        const rec = importCredential(user.id, jwt);
+        const data = credential || jwt;
+        if (!data) return res.status(400).json({ error: 'credential required' });
+
+        const rec = importCredentialAny(user.id, data);
         res.json({ ok: true, credential: rec });
     } catch (e) {
         console.error(e);

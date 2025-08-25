@@ -99,13 +99,13 @@
 <div id="user" class="card"></div>
 
 <div class="card">
-    <h3>Import credential (JWT)</h3>
+    <h3>Import credential</h3>
     <div class="row">
-        <label class="sr-only" for="cred">Credential JWT</label>
-        <input id="cred" placeholder="Paste JWT here"/>
+        <label class="sr-only" for="cred">Credential</label>
+        <input id="cred" placeholder="Paste credential (JWT or JSON) here"/>
         <button id="btnImport">Import</button>
     </div>
-    <div class="muted">Supports JWT-encoded W3C credential. Header & payload are parsed for quick view.</div>
+    <div class="muted">Supports JWT-encoded or JSON-LD credential. Header & payload are parsed for quick view.</div>
 </div>
 
 <div class="card">
@@ -229,9 +229,9 @@
 
     btnImport.onclick = async () => {
         try{
-            const jwt = credInp.value.trim();
-            if(!jwt) return;
-            await post('/api/credentials/import', { tgUserId, jwt });
+            const cred = credInp.value.trim();
+            if(!cred) return;
+            await post('/api/credentials/import', { tgUserId, credential: cred });
             credInp.value = '';
             await load();
         } catch(e){
