@@ -85,8 +85,19 @@ app.post('/api/credentials/import-link', async (req, res) => {
         const { tgUserId, link } = req.body || {};
         if (!tgUserId || !link) return res.status(400).json({ error: 'tgUserId and link required' });
 
-        const user = getUserByTgId(String(tgUserId));
+        let user = getUserByTgId(String(tgUserId));
         if (!user) return res.status(404).json({ error: 'user not found' });
+
+        // ensure DID exists (client might skip /api/session)
+        if (!user.did || user.did.startsWith('did:example')) {
+            try {
+                const did = await ensureDidForUser(user);
+                user = { ...user, did };
+            } catch (err) {
+                console.error('ensureDidForUser error:', err);
+                return res.status(500).json({ error: 'internal' });
+            }
+        }
 
         // извлечь request_uri из iden3comm:// или wallet-staging ссылки
         let requestUri;
@@ -121,16 +132,14 @@ app.post('/api/credentials/import-link', async (req, res) => {
         if (!credRes.ok) throw new Error(`credential HTTP ${credRes.status}`);
         const raw = await credRes.text();
 
-        let jwt;
+        let credential;
         try {
             const j = JSON.parse(raw);
-            jwt = j.credentialJWT || j.jwt || j.token;
+            credential = j.credential || j.credentialJWT || j.jwt || j.token || j;
         } catch (_) {
-            jwt = raw.trim();
-        }
-        if (!jwt) throw new Error('credential jwt not found');
+            credential = raw.trim();
 
-        const rec = importCredentialAny(user.id, jwt);
+            const rec = importCredentialAny(user.id, credential);
         res.json({ ok: true, credential: rec });
     } catch (e) {
         console.error(e);
