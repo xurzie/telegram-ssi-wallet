@@ -4,9 +4,10 @@ const path = require('path');
 const bodyParser = require('body-parser');
 const dotenv = require('dotenv');
 dotenv.config();
+const fetch = global.fetch || require('node-fetch');
 
 const { ensureUser, getUserByTgId } = require('./users');
-const { importCredential, listCredentials } = require('./wallet');
+const { importCredential, importCredentialAny, listCredentials } = require('./wallet');
 const { ensureDidForUser } = require('../sdk/identity'); // не трогаем
 // auth сейчас не нужен для DID/импорта, чтобы не падал — можно временно заглушить в sdk/polygonid.js
 const { authRequest } = require('../sdk/polygonid');
@@ -75,6 +76,65 @@ app.post('/api/credentials/import', (req, res) => {
     } catch (e) {
         console.error(e);
         res.status(400).json({ error: e.message || 'invalid credential' });
+    }
+});
+
+/** Импорт креденшела по ссылке (iden3comm request_uri) */
+app.post('/api/credentials/import-link', async (req, res) => {
+    try {
+        const { tgUserId, link } = req.body || {};
+        if (!tgUserId || !link) return res.status(400).json({ error: 'tgUserId and link required' });
+
+        const user = getUserByTgId(String(tgUserId));
+        if (!user) return res.status(404).json({ error: 'user not found' });
+
+        // извлечь request_uri из iden3comm:// или wallet-staging ссылки
+        let requestUri;
+        try {
+            if (link.startsWith('iden3comm://')) {
+                const u = new URL(link.replace('iden3comm://', 'http://'));
+                requestUri = u.searchParams.get('request_uri');
+            } else {
+                const u = new URL(link);
+                requestUri = u.searchParams.get('request_uri');
+                if (!requestUri && u.hash) {
+                    requestUri = new URLSearchParams(u.hash.substring(1)).get('request_uri');
+                }
+            }
+        } catch (_) {}
+        if (!requestUri) return res.status(400).json({ error: 'request_uri not found in link' });
+
+        // запрос оффера
+        const offerRes = await fetch(requestUri);
+        if (!offerRes.ok) throw new Error(`offer HTTP ${offerRes.status}`);
+        const offer = await offerRes.json();
+        const credUrl = offer?.body?.url;
+        const credId = offer?.body?.credentials?.[0]?.id;
+        if (!credUrl || !credId) throw new Error('invalid offer');
+
+        // запрос самого креденшела
+        const credRes = await fetch(credUrl, {
+            method: 'POST',
+            headers: { 'content-type': 'application/json' },
+            body: JSON.stringify({ credentialId: credId, did: user.did })
+        });
+        if (!credRes.ok) throw new Error(`credential HTTP ${credRes.status}`);
+        const raw = await credRes.text();
+
+        let jwt;
+        try {
+            const j = JSON.parse(raw);
+            jwt = j.credentialJWT || j.jwt || j.token;
+        } catch (_) {
+            jwt = raw.trim();
+        }
+        if (!jwt) throw new Error('credential jwt not found');
+
+        const rec = importCredentialAny(user.id, jwt);
+        res.json({ ok: true, credential: rec });
+    } catch (e) {
+        console.error(e);
+        res.status(400).json({ error: e.message || 'import-link failed' });
     }
 });
 

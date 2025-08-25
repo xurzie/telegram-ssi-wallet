@@ -12,9 +12,14 @@ const {
     IdentitiesIdentitiesSt,
     Packages,
 } = require('@0xpolygonid/js-sdk');
-
-const { DID } = require('@iden3/js-iden3comm'); // удобный конструктор DID
-const { MediaType, createAuthorizationRequest } = require('@iden3/js-iden3comm');
+// @iden3/js-iden3comm is optional; if absent, auth endpoints are disabled
+let DID, MediaType, createAuthorizationRequest;
+try {
+    ({ DID, MediaType, createAuthorizationRequest } = require('@iden3/js-iden3comm'));
+} catch (err) {
+    // eslint-disable-next-line no-console
+    console.warn('auth disabled: install @iden3/js-iden3comm to enable');
+}
 
 /**
  * Готовит минимальную “ин-мемори” инфраструктуру SDK под наш DID.
@@ -22,7 +27,7 @@ const { MediaType, createAuthorizationRequest } = require('@iden3/js-iden3comm')
  */
 async function setupForUser(user) {
     if (!user?.did || !user?.seed_hex) throw new Error('user requires did and seed_hex');
-
+    if (!DID) throw new Error('auth not configured');
     // KMS c BabyJubJub ключом из seed
     const kms = new KMS();
     const seed = Buffer.from(user.seed_hex, 'hex');
@@ -57,6 +62,7 @@ async function setupForUser(user) {
  * совместимый с issuer/verifier, как в тесте SDK: authRes.token
  */
 async function authRequest(user, requestUri) {
+    if (!MediaType) throw new Error('auth not configured');
     const { pkgMgr, did } = await setupForUser(user);
 
     // 1) тянем authorization request (iden3comm json)
