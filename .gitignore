@@ -1,0 +1,14 @@
+node_modules/
+.env
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+dist/
+build/
+coverage/
+.DS_Store
+# локальная БД/кэш, если есть
+*.sqlite
+data/
+tmp/

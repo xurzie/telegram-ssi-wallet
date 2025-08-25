@@ -1,0 +1,23 @@
+{
+  "name": "telegram-ssi-wallet",
+  "version": "0.1.0",
+  "private": true,
+  "type": "commonjs",
+  "scripts": {
+    "start": "node server/index.js",
+    "dev": "nodemon server/index.js",
+    "bot": "node server/bot.js",
+    "initdb": "node server/initdb.js"
+  },
+  "dependencies": {
+    "@0xpolygonid/js-sdk": "^1.33.3",
+    "@iden3/js-iden3-core": "^1.7.0",
+    "better-sqlite3": "^9.4.0",
+    "dotenv": "^16.4.5",
+    "express": "^4.19.2",
+    "node-telegram-bot-api": "^0.66.0"
+  },
+  "devDependencies": {
+    "nodemon": "^3.1.0"
+  }
+}
