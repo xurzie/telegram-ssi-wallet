@@ -1,184 +1,116 @@
 // sdk/polygonid.js
-// Реальная авторизация через @0xpolygonid/js-sdk + импорт кредов из БД.
+/* eslint-disable no-console */
+const fetch = global.fetch || require('node-fetch'); // на старых Node
+const {
+    KMS, KmsKeyType,
+    PortableDid,
+    IdentityWallet,
+    CredentialWallet,
+    MerkleTreeInMemoryStorage,
+    InMemoryPrivateKeyStore,
+    InMemoryDIDKeyStore,
+    IdentitiesIdentitiesSt,
+    Packages,
+} = require('@0xpolygonid/js-sdk');
 
-const USE_MOCKS = (process.env.ENABLE_MOCKS || '1') !== '0';
+const { DID } = require('@iden3/js-iden3comm'); // удобный конструктор DID
+const { MediaType, createAuthorizationRequest } = require('@iden3/js-iden3comm');
 
-// сеть/резолвер
-const NETWORK_ID = process.env.NETWORK_ID || 'amoy';
-const CHAIN_RPC = process.env.CHAIN_RPC || 'https://rpc-amoy.polygon.technology';
-// адрес state-контракта в твоей сети (замени при необходимости)
-const STATE_CONTRACT = process.env.STATE_CONTRACT || '0x134B1BE34911E39A8397ec6289782989729807a4';
+/**
+ * Готовит минимальную “ин-мемори” инфраструктуру SDK под наш DID.
+ * Возвращает { kms, idw, credw, pkgMgr, did }
+ */
+async function setupForUser(user) {
+    if (!user?.did || !user?.seed_hex) throw new Error('user requires did and seed_hex');
 
-// пути к циркUITам AuthV2
-const AUTH_WASM = process.env.AUTH_WASM;
-const AUTH_ZKEY = process.env.AUTH_ZKEY;
-
-const { getDb } = require('../server/db');
-
-// ================= Helpers =================
-
-function normalizeRequestUri(requestUri) {
-    // iden3comm://?request_uri=... → обычный URL
-    if (requestUri.startsWith('iden3comm://')) {
-        const u = new URL(requestUri.replace('iden3comm://', 'https://'));
-        const inner = u.searchParams.get('request_uri');
-        if (inner) return inner;
-    }
-    return requestUri;
-}
-
-async function loadAuthMessageString(requestUri) {
-    const url = normalizeRequestUri(requestUri);
-
-    // Если это http(s) → тянем JSON iden3comm
-    if (/^https?:\/\//i.test(url)) {
-        // Node 18+ имеет global fetch; если нет — поставь cross-fetch и раскомментируй:
-        // const fetch = require('cross-fetch');
-        const r = await fetch(url);
-        if (!r.ok) throw new Error(`request_uri fetch failed: ${r.status}`);
-        return await r.text(); // как строка
-    }
-
-    // Иначе считаем, что нам дали уже “сырой” JSON (или JWT-строку)
-    return url;
-}
-
-function extractCallbackMeta(jsonStr) {
-    try {
-        const o = JSON.parse(jsonStr);
-        // разные верифаеры используют разные ключи
-        const callbackUrl = o?.callbackUrl || o?.serviceUrl || o?.replyUrl || null;
-        const sessionId = o?.sessionId || o?.thid || null;
-        return { callbackUrl, sessionId };
-    } catch {
-        return null;
-    }
-}
-
-async function postCallback(url, body) {
-    try {
-        const r = await fetch(url, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify(body),
-        });
-        return r.ok;
-    } catch {
-        return false;
-    }
-}
-
-function getUserCredJWTs(userId) {
-    const db = getDb();
-    return db.prepare('SELECT jwt FROM credentials WHERE user_id = ?').all(userId);
-}
-
-function saveUserDID(userId, did) {
-    const db = getDb();
-    db.prepare('UPDATE users SET did = ? WHERE id = ?').run(did, userId);
-}
-
-// ================= Main =================
-
-async function authRequest(user, requestUri) {
-    if (USE_MOCKS) {
-        // Mock-ответ (чтобы провязать флоу end-to-end)
-        const now = Math.floor(Date.now() / 1000);
-        const header = { alg: 'none', typ: 'JWT' };
-        const payload = {
-            iss: user.did,
-            sub: 'verifier',
-            iat: now,
-            exp: now + 600,
-            msg: 'MOCK_AUTH_RESPONSE_NOT_VALID_FOR_REAL_VERIFIER'
-        };
-        const b64u = (o) => Buffer.from(JSON.stringify(o)).toString('base64url');
-        return { ok: true, mode: 'mock', token: `${b64u(header)}.${b64u(payload)}.` };
-    }
-
-    // 0) Загружаем сообщение авторизации (iden3comm JSON)
-    const msgStr = await loadAuthMessageString(requestUri);
-    const msgBytes = Buffer.from(msgStr, 'utf8');
-
-    // 1) Инициализация js-sdk
-    const {
-        initInMemoryDataStorage,
-        IdentityWallet,
-        CredentialWallet,
-        KMS, KmsKeyType,
-        BjjProvider,
-        EthStateResolver,
-        DefaultDIDResolver,
-        CredentialStatusResolverRegistry,
-        AuthHandler,
-    } = require('@0xpolygonid/js-sdk');
-
-    if (!AUTH_WASM || !AUTH_ZKEY) {
-        throw new Error('AUTH_WASM/AUTH_ZKEY не заданы в .env (пути к authV2.wasm и authV2.zkey).');
-    }
-
-    const dataStorage = await initInMemoryDataStorage();
-
+    // KMS c BabyJubJub ключом из seed
     const kms = new KMS();
-    // BabyJubJub ключ из seed (users.seed_hex)
     const seed = Buffer.from(user.seed_hex, 'hex');
     const keyId = await kms.createKeyFromSeed(KmsKeyType.BabyJubJub, seed);
-    const bjj = new BjjProvider(kms, keyId);
 
-    const identityWallet = new IdentityWallet({ methods: { bjj }, storage: dataStorage });
-    const credentialWallet = new CredentialWallet({ storage: dataStorage });
+    // DID (у нас уже есть строка вида did:polygonid:polygon:amoy:...)
+    const did = DID.parse(user.did); // или new DID(user.did)
 
-    // Резолвер состояния и DID
-    const ethResolver = new EthStateResolver({ url: CHAIN_RPC, contractAddress: STATE_CONTRACT });
-    const didResolver = new DefaultDIDResolver({ resolvers: { polygonid: ethResolver } });
-    const statusRegistry = new CredentialStatusResolverRegistry();
+    // In-memory хранилища для деревьев и ключей
+    const mtStorage = new MerkleTreeInMemoryStorage();
+    const privKeyStore = new InMemoryPrivateKeyStore();
+    const didKeyStore = new InMemoryDIDKeyStore();
 
-    const authHandler = new AuthHandler(
-        identityWallet,
-        credentialWallet,
-        didResolver,
-        statusRegistry,
-        {
-            // пути к циркUITам для AuthV2
-            authV2: {
-                key: keyId,
-                wasm: AUTH_WASM,
-                zkey: AUTH_ZKEY,
-            },
-        }
-    );
+    // Привязываем ключ к DID (для упаковки сообщений и подписи)
+    await didKeyStore.saveKey(did.string(), { type: KmsKeyType.BabyJubJub, kid: keyId });
 
-    // 2) Гарантируем корректный DID
-    let did = user.did;
-    if (!did || !did.startsWith('did:polygonid')) {
-        const newDidObj = await identityWallet.createDID({
-            method: 'polygonid',
-            blockchain: 'polygon',
-            networkId: NETWORK_ID,
-            keyProvider: bjj,
-        });
-        did = typeof newDidObj === 'string'
-            ? newDidObj
-            : (newDidObj.string?.() || newDidObj.id || String(newDidObj));
-        saveUserDID(user.id, did);
-    }
+    // Identity & Credential wallets (минимум, чтобы SDK не падал)
+    const identitiesStore = new IdentitiesIdentitiesSt();
+    const idw = new IdentityWallet(kms, mtStorage, identitiesStore, didKeyStore);
+    const credw = new CredentialWallet();
 
-    // 3) Импортим креды из БД — если твой запрос будет их проверять
-    const credRows = getUserCredJWTs(user.id);
-    for (const { jwt } of credRows) {
-        try { await credentialWallet.import(jwt); } catch {}
-    }
+    // Пакетный менеджер для DIDComm/JWZ упаковки
+    const pkgMgr = new Packages.PackageManager();
+    // Поддержим оба media type: plain JSON и ZKP/JWZ
+    pkgMgr.setMediaTypeProfiles([MediaType.PlainMessage, MediaType.ZKPMessage]);
 
-    // 4) Генерируем ответ на AuthorizationRequest
-    const responseJwt = await authHandler.handleAuthorizationRequest(did, msgBytes);
-
-    // 5) Если у запроса есть callback — отправим туда ответ (часто это ожидается)
-    const meta = extractCallbackMeta(msgStr);
-    if (meta?.callbackUrl) {
-        await postCallback(meta.callbackUrl, { token: responseJwt, sessionId: meta.sessionId });
-    }
-
-    return { ok: true, mode: 'real', token: responseJwt };
+    return { kms, idw, credw, pkgMgr, did, keyId };
 }
 
-module.exports = { authRequest };
+/**
+ * Обрабатывает AuthorizationRequest (request_uri) и возвращает JWZ token,
+ * совместимый с issuer/verifier, как в тесте SDK: authRes.token
+ */
+async function authRequest(user, requestUri) {
+    const { pkgMgr, did } = await setupForUser(user);
+
+    // 1) тянем authorization request (iden3comm json)
+    const r = await fetch(requestUri);
+    if (!r.ok) throw new Error(`auth request HTTP ${r.status}`);
+    const authReq = await r.json();
+
+    // 2) Упаковываем/подписываем ответ на авторизацию
+    // createAuthorizationRequest нужен когда мы САМИ создаём запрос;
+    // здесь у нас уже есть authReq от верифайера/иссюера.
+    // Нам надо “handle” — т.е. упаковать ответ.
+    // В js-sdk для этого есть Pack/Unpack в PackageManager:
+    // Сделаем минимальный ответ согласно iden3comm спецификации:
+    const response = {
+        id: crypto.randomUUID(),
+        typ: 'application/iden3comm-plain-json',
+        type: 'https://iden3-communication.io/authorization/1.0/response',
+        thid: authReq.thid || authReq.id,
+        from: did.string(),
+        to: authReq.from,
+        body: {
+            message: 'ok'
+        }
+    };
+
+    // 3) Пакуем как ZKPMessage (JWZ)
+    const packed = await pkgMgr.pack(response, did.string(), authReq.from, MediaType.ZKPMessage);
+
+    // 4) Отправляем ответ туда же, куда предписывает агент
+    // Обычно прямо в тот же endpoint, откуда пришёл запрос (issuer-node /v2/agent)
+    // но чтобы не гадать — если в authReq.body.url есть url — шлём туда,
+    // иначе — на request_uri с POST.
+    const authPostUrl =
+        authReq.body?.url ||
+        authReq.url ||
+        requestUri;
+
+    const rr = await fetch(authPostUrl, {
+        method: 'POST',
+        headers: { 'content-type': 'application/iden3comm-plain+json' },
+        body: Buffer.from(packed) // бинарь JWZ
+    });
+
+    const raw = await rr.text();
+
+    // 5) Агент вернёт либо JWZ токен строкой, либо JSON с {token}
+    if (raw.split('.').length >= 3) return { token: raw.trim(), mode: 'jwz' };
+    try {
+        const j = JSON.parse(raw);
+        const t = j.token || j.jwt || j.credentialJWT;
+        if (typeof t === 'string') return { token: t, mode: 'json' };
+    } catch (_) {}
+
+    throw new Error('auth: agent did not return token');
+}
+
+module.exports = { authRequest, setupForUser };
