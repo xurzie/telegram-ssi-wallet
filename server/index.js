@@ -138,8 +138,8 @@ app.post('/api/credentials/import-link', async (req, res) => {
             credential = j.credential || j.credentialJWT || j.jwt || j.token || j;
         } catch (_) {
             credential = raw.trim();
-
-            const rec = importCredentialAny(user.id, credential);
+        }
+        const rec = importCredentialAny(user.id, credential);
         res.json({ ok: true, credential: rec });
     } catch (e) {
         console.error(e);
