@@ -122,8 +122,12 @@ app.post('/api/credentials/import-link', async (req, res) => {
         const offerRes = await fetch(requestUri);
         if (!offerRes.ok) throw new Error(`offer HTTP ${offerRes.status}`);
         const offer = await offerRes.json();
-        const credUrl = offer?.body?.url;
-        const credId = offer?.body?.credentials?.[0]?.id;
+        if (process.env.DEBUG_IMPORT) console.log('offer', JSON.stringify(offer));
+        let credUrl = offer?.body?.url;
+        let credId = offer?.body?.credentials?.[0]?.id;
+        // некоторые сервисы помещают ссылку на credential внутрь первого элемента массива credentials
+        if (!credUrl) credUrl = offer?.body?.credentials?.[0]?.url || offer?.url;
+        if (!credId) credId = offer?.body?.credentialId || offer?.credentialId;
         if (!credUrl || !credId) throw new Error('invalid offer');
 
         // запрос самого креденшела
