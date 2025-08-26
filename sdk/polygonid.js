@@ -1,122 +1,201 @@
 // sdk/polygonid.js
-/* eslint-disable no-console */
-const fetch = global.fetch || require('node-fetch'); // на старых Node
+// Подключаем Polygon ID js-sdk и настраиваем кошелёк/примитивы для Auth
+const path = require('path');
+const fs = require('fs');
+
+// В Node 22 fetch уже глобальный; для Node<18 можно раскомментировать:
+// global.fetch = global.fetch || require('node-fetch');
+
 const {
-    KMS, KmsKeyType,
-    PortableDid,
+    // ключи/подписи
+    KMS,
+    KmsKeyType,
+    BjjProvider,
+    InMemoryPrivateKeyStore,
+
+    // идентичность/сторедж
     IdentityWallet,
     CredentialWallet,
-    MerkleTreeInMemoryStorage,
-    InMemoryPrivateKeyStore,
-    InMemoryDIDKeyStore,
-    IdentitiesIdentitiesSt,
-    Packages,
+    InMemoryDataSource,
+    InMemoryMerkleTreeStorage,
+
+    // пакеры и менеджер пакетов iden3comm
+    PackageManager,
+    JWSPacker,
+    ZKPPacker,
+    PlainPacker,
+
+    // прувер и загрузка ключей для циркутов
+    ProofService,
+    FSKeyLoader,
+    CircuitStorage,
+
+    // обработчик auth
+    AuthHandler,
+    Resolver
 } = require('@0xpolygonid/js-sdk');
-// @iden3/js-iden3comm is optional; if absent, auth endpoints are disabled
-let DID, MediaType, createAuthorizationRequest;
-try {
-    ({ DID, MediaType, createAuthorizationRequest } = require('@iden3/js-iden3comm'));
-} catch (err) {
-    // eslint-disable-next-line no-console
-    console.warn('auth disabled: install @iden3/js-iden3comm to enable');
+
+const USE_MOCKS = false; // в README у тебя про это—оставляю совместимость
+
+// --- Вспомогательная проверка: каталоги циркутов ---
+function assertCircuitsDir(dir) {
+    const must = [
+        // минимальный набор для AuthV2 (параметры верификации/доказательства)
+        path.join(dir, 'authV2', 'circuit_final.zkey'),
+        path.join(dir, 'authV2', 'verification_key.json'),
+        path.join(dir, 'authV2', 'wasm', 'circuit.wasm'),
+    ];
+    for (const p of must) {
+        if (!fs.existsSync(p)) {
+            throw new Error(
+                `Circuits are not found. Expected: ${p}\n` +
+                `Set CIRCUITS_DIR .env to folder with PolygonID circuits (authV2).`
+            );
+        }
+    }
 }
 
-/**
- * Готовит минимальную “ин-мемори” инфраструктуру SDK под наш DID.
- * Возвращает { kms, idw, credw, pkgMgr, did }
- */
+function circuitsFromEnv() {
+    const dir = process.env.CIRCUITS_DIR || path.resolve(process.cwd(), 'circuits');
+    assertCircuitsDir(dir);
+    return dir;
+}
+
+// --- Глобально одноразовая инициализация того, что не зависит от пользователя ---
+let globalOnce = null;
+function initGlobalsOnce() {
+    if (globalOnce) return globalOnce;
+
+    // Пакетный менеджер для iden3comm (JWZ/JWS, ZKP, plain)
+    const pkgMgr = new PackageManager();
+
+    // Сторедж циркутов (читаем с диска)
+    const circuitsDir = circuitsFromEnv();
+    const keyLoader = new FSKeyLoader(circuitsDir);
+    const circuitStorage = new CircuitStorage(keyLoader);
+
+    // ZKP-пакер должен знать где брать proving/verification params
+    const zkpPacker = new ZKPPacker({
+        provingParams: { dir: circuitsDir },
+        verificationParams: { dir: circuitsDir },
+    });
+
+    // Регистрируем пакеры
+    pkgMgr.registerPackers([
+        new JWSPacker(),
+        zkpPacker,
+        new PlainPacker(),
+    ]);
+
+    // Привязываем прувер
+    const proofService = new ProofService({
+        circuitStorage,
+        // можно передать custom prover, если надо; по умолчанию нативный groth16
+    });
+
+    const resolver = new Resolver(); // базовый резолвер DID/issuer, по необходимости донастроишь
+
+    globalOnce = { pkgMgr, proofService, circuitStorage, resolver, circuitsDir };
+    return globalOnce;
+}
+
+// --- Инициализация кошелька/ключей ПОД ПОЛЬЗОВАТЕЛЯ ---
 async function setupForUser(user) {
-    if (!user?.did || !user?.seed_hex) throw new Error('user requires did and seed_hex');
-    if (!DID) throw new Error('auth not configured');
-    // KMS c BabyJubJub ключом из seed
+    if (!user || !user.did) {
+        throw new Error('setupForUser: user.did is required');
+    }
+    if (!user.seed_hex) {
+        throw new Error('setupForUser: user.seed_hex is required to derive BJJ key');
+    }
+
+    const { pkgMgr, proofService } = initGlobalsOnce();
+
+    // KeyStore в памяти + провайдер для BabyJubJub
+    const keyStore = new InMemoryPrivateKeyStore();
+    const bjjProvider = new BjjProvider(KmsKeyType.BabyJubJub, keyStore);
+
+    // KMS и регистрация провайдера под конкретным типом ключа
     const kms = new KMS();
+    kms.registerKeyProvider(KmsKeyType.BabyJubJub, bjjProvider);
+
+    // Создаём/импортируем ключ из seed (детерминированный keyId)
     const seed = Buffer.from(user.seed_hex, 'hex');
     const keyId = await kms.createKeyFromSeed(KmsKeyType.BabyJubJub, seed);
 
-    // DID (у нас уже есть строка вида did:polygonid:polygon:amoy:...)
-    const did = DID.parse(user.did); // или new DID(user.did)
-
-    // In-memory хранилища для деревьев и ключей
-    const mtStorage = new MerkleTreeInMemoryStorage();
-    const privKeyStore = new InMemoryPrivateKeyStore();
-    const didKeyStore = new InMemoryDIDKeyStore();
-
-    // Привязываем ключ к DID (для упаковки сообщений и подписи)
-    await didKeyStore.saveKey(did.string(), { type: KmsKeyType.BabyJubJub, kid: keyId });
-
-    // Identity & Credential wallets (минимум, чтобы SDK не падал)
-    const identitiesStore = new IdentitiesIdentitiesSt();
-    const idw = new IdentityWallet(kms, mtStorage, identitiesStore, didKeyStore);
-    const credw = new CredentialWallet();
-
-    // Пакетный менеджер для DIDComm/JWZ упаковки
-    const pkgMgr = new Packages.PackageManager();
-    // Поддержим оба media type: plain JSON и ZKP/JWZ
-    pkgMgr.setMediaTypeProfiles([MediaType.PlainMessage, MediaType.ZKPMessage]);
-
-    return { kms, idw, credw, pkgMgr, did, keyId };
-}
-
-/**
- * Обрабатывает AuthorizationRequest (request_uri) и возвращает JWZ token,
- * совместимый с issuer/verifier, как в тесте SDK: authRes.token
- */
-async function authRequest(user, requestUri) {
-    if (!MediaType) throw new Error('auth not configured');
-    const { pkgMgr, did } = await setupForUser(user);
-
-    // 1) тянем authorization request (iden3comm json)
-    const r = await fetch(requestUri);
-    if (!r.ok) throw new Error(`auth request HTTP ${r.status}`);
-    const authReq = await r.json();
-
-    // 2) Упаковываем/подписываем ответ на авторизацию
-    // createAuthorizationRequest нужен когда мы САМИ создаём запрос;
-    // здесь у нас уже есть authReq от верифайера/иссюера.
-    // Нам надо “handle” — т.е. упаковать ответ.
-    // В js-sdk для этого есть Pack/Unpack в PackageManager:
-    // Сделаем минимальный ответ согласно iden3comm спецификации:
-    const response = {
-        id: crypto.randomUUID(),
-        typ: 'application/iden3comm-plain-json',
-        type: 'https://iden3-communication.io/authorization/1.0/response',
-        thid: authReq.thid || authReq.id,
-        from: did.string(),
-        to: authReq.from,
-        body: {
-            message: 'ok'
-        }
+    // Памятные стореджи js-sdk (identity / credentials / merkle trees / states)
+    const dataStorage = {
+        identity: new InMemoryDataSource(),
+        credential: new InMemoryDataSource(),
+        mt: new InMemoryMerkleTreeStorage(),
+        states: new InMemoryDataSource(),
     };
 
-    // 3) Пакуем как ZKPMessage (JWZ)
-    const packed = await pkgMgr.pack(response, did.string(), authReq.from, MediaType.ZKPMessage);
+    const credWallet = new CredentialWallet(dataStorage.credential);
+    const idWallet = new IdentityWallet(kms, dataStorage, credWallet);
 
-    // 4) Отправляем ответ туда же, куда предписывает агент
-    // Обычно прямо в тот же endpoint, откуда пришёл запрос (issuer-node /v2/agent)
-    // но чтобы не гадать — если в authReq.body.url есть url — шлём туда,
-    // иначе — на request_uri с POST.
-    const authPostUrl =
-        authReq.body?.url ||
-        authReq.url ||
-        requestUri;
-
-    const rr = await fetch(authPostUrl, {
-        method: 'POST',
-        headers: { 'content-type': 'application/iden3comm-plain+json' },
-        body: Buffer.from(packed) // бинарь JWZ
+    // Привязываем обработчик auth
+    const authHandler = new AuthHandler({
+        wallet: idWallet,
+        credentialWallet: credWallet,
+        packageManager: pkgMgr,
+        proofService,
+        // mediaType/packerOptions можно переопределить при вызове
     });
 
-    const raw = await rr.text();
-
-    // 5) Агент вернёт либо JWZ токен строкой, либо JSON с {token}
-    if (raw.split('.').length >= 3) return { token: raw.trim(), mode: 'jwz' };
-    try {
-        const j = JSON.parse(raw);
-        const t = j.token || j.jwt || j.credentialJWT;
-        if (typeof t === 'string') return { token: t, mode: 'json' };
-    } catch (_) {}
-
-    throw new Error('auth: agent did not return token');
+    return {
+        did: user.did,
+        keyId,
+        kms,
+        idWallet,
+        credWallet,
+        authHandler,
+        pkgMgr,
+        proofService,
+    };
 }
 
-module.exports = { authRequest, setupForUser };
+// --- Утилита: подтянуть байты iden3comm запроса по request_uri / iden3comm:// ---
+async function fetchAuthRequestBytes(requestUriOrIden3commUrl) {
+    let url = requestUriOrIden3commUrl;
+
+    // Поддержка QR формата вида iden3comm://?request_uri=...
+    if (String(url).startsWith('iden3comm://')) {
+        const u = new URL(url.replace('iden3comm://', 'http://dummy-host/'));
+        const req = u.searchParams.get('request_uri');
+        if (!req) throw new Error('request uri not found');
+        url = req;
+    }
+
+    // request_uri — это либо data:payload, либо https-URL на JSON
+    if (String(url).startsWith('data:')) {
+        const base64 = url.split(',')[1] || '';
+        return Buffer.from(base64, 'base64');
+    }
+
+    const resp = await fetch(url, { method: 'GET' });
+    if (!resp.ok) {
+        throw new Error(`failed to fetch request uri: ${resp.status}`);
+    }
+    const buf = Buffer.from(await resp.arrayBuffer());
+    return new Uint8Array(buf);
+}
+
+// --- Публичная точка: обработать auth-запрос и вернуть JWT ответа ---
+async function handleAuthRequest(user, requestUri, opts = {}) {
+    const { authHandler } = await setupForUser(user);
+
+    const raw = await fetchAuthRequestBytes(requestUri);
+
+    // по умолчанию полагаемся на auto-detect mediaType внутри пакеров
+    const { token, authRequest, authResponse } =
+        await authHandler.handleAuthorizationRequest(user.did, raw, opts);
+
+    return { token, authRequest, authResponse };
+}
+
+// Совместимость с тем, как у тебя дергается из server/
+module.exports = {
+    USE_MOCKS,
+    setupForUser,
+    handleAuthRequest,
+};

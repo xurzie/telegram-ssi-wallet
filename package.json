@@ -5,9 +5,9 @@
   "type": "commonjs",
   "scripts": {
     "start": "node server/index.js",
-    "dev": "nodemon server/index.js",
+    "initdb": "node server/initdb.js",
     "bot": "node server/bot.js",
-    "initdb": "node server/initdb.js"
+    "circuits": "bash scripts/dl_circuits.sh"
   },
   "dependencies": {
     "@0xpolygonid/js-sdk": "^1.33.3",
