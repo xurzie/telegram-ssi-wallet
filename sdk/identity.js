@@ -50,7 +50,6 @@ function newWallets() {
 }
 
 async function ensureDidForUser(user) {
-    // уже есть реальный DID — ничего не делаем
     if (user.did && !user.did.startsWith('did:example')) return user.did;
 
     const { idWallet } = newWallets();
