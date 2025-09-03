@@ -12,3 +12,6 @@ coverage/
 data/
 tmp/
 circuits/
+
+# PolygonID circuits (do not commit)
+circuits/
