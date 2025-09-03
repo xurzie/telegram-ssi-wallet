@@ -11,7 +11,6 @@ mkdir -p "$DEST" "$TMP"
 
 ZIP="$TMP/latest.zip"
 echo "→ downloading circuits to $ZIP ..."
-# официальные источники в доках/примерах SDK
 curl -L -o "$ZIP" https://circuits.privado.id/latest.zip || \
 curl -L -o "$ZIP" https://iden3-circuits-bucket.s3.eu-west-1.amazonaws.com/latest.zip
 

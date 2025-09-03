@@ -8,7 +8,6 @@ dist/
 build/
 coverage/
 .DS_Store
-# локальная БД/кэш, если есть
 *.sqlite
 data/
 tmp/

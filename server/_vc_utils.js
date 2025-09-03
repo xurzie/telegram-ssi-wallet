@@ -1,7 +1,6 @@
 // server/_vc_utils.js
 'use strict';
 
-/** base64url → JSON (для JWT header/payload) */
 function base64urlToJSON(str) {
     try {
         const normalized = String(str)
@@ -15,7 +14,6 @@ function base64urlToJSON(str) {
     }
 }
 
-/** Пытаемся распарсить JWT. Возвращаем { header, payload } либо null. */
 function tryParseJwt(jwt) {
     const parts = String(jwt || '').split('.');
     if (parts.length !== 3) return null;
@@ -25,7 +23,6 @@ function tryParseJwt(jwt) {
     return { header, payload };
 }
 
-/** Унификация метаинфы для JWT-VC и JSON-LD VC */
 function normalizeVcSummary(payload, header = {}) {
     const vc = payload?.vc || payload;
 

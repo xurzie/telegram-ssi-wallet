@@ -1,8 +1,8 @@
 # Telegram SSI Wallet (Starter)
 
 A minimal starter that implements a **Telegram WebApp wallet** which can **store credentials (JWT or JSON-LD)** and, in the ideal flow, **authenticate against a Verifier (Week #2)** using Polygon ID js-sdk.
-> ✅ Out of the box: WebApp UI + Express server + SQLite storage + Telegram bot with "Open Wallet" button + Credential import/list.
-> 🔜 Plug in Polygon ID js-sdk (`@0xpolygonid/js-sdk`) in `sdk/polygonid.js` to generate real proofs for your verifier. A mock mode is included to let you wire the flow first.
+> Out of the box: WebApp UI + Express server + SQLite storage + Telegram bot with "Open Wallet" button + Credential import/list.
+> Plug in Polygon ID js-sdk (`@0xpolygonid/js-sdk`) in `sdk/polygonid.js` to generate real proofs for your verifier. A mock mode is included to let you wire the flow first.
 
 ---
 

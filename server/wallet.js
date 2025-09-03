@@ -3,27 +3,23 @@
 
 const { getDb } = require('./db');
 
-/** Примитивная проверка на формат JWT */
 function looksLikeJwt(s) {
     return typeof s === 'string' && s.split('.').length === 3;
 }
 
-/** base64url → JSON (с подстраховкой под «ручной» base64) */
 function b64urlToJson(str) {
-    // сначала пробуем строго base64url
     try {
         const txt = Buffer.from(str, 'base64url').toString('utf8');
         return JSON.parse(txt);
-    } catch {
-        // затем приводим к обычному base64
-        const pad = '==='.slice((str.length + 3) % 4);
-        const b64 = String(str).replace(/-/g, '+').replace(/_/g, '/') + pad;
-        const txt = Buffer.from(b64, 'base64').toString('utf8');
+    } catch (_) {
+        const clean = String(str).replace(/-/g, '+').replace(/_/g, '/');
+        const padLen = (4 - (clean.length % 4)) % 4;
+        const padded = clean + '='.repeat(padLen);
+        const txt = Buffer.from(padded, 'base64').toString('utf8');
         return JSON.parse(txt);
     }
 }
 
-/** Небезопасный (но быстрый) парсинг JWT без проверки подписи */
 function parseJwtUnsafe(jwt) {
     const parts = String(jwt).split('.');
     if (parts.length !== 3) throw new Error('not a JWT');
@@ -32,7 +28,29 @@ function parseJwtUnsafe(jwt) {
     return { header, payload };
 }
 
-/** Нормализуем запись из JWT (JWT-VC и/или VC внутри payload.vc) */
+function extractJwtFromObject(obj) {
+    if (!obj || typeof obj !== 'object') return null;
+    const candidate =
+        obj.credentialJWT ||
+        obj.jwt ||
+        obj.token ||
+        (typeof obj.credential === 'string' && obj.credential) ||
+        (obj.proof && typeof obj.proof.jwt === 'string' && obj.proof.jwt) ||
+        null;
+
+    return (candidate && looksLikeJwt(candidate)) ? candidate : null;
+}
+
+function normalizeVcType(type) {
+    if (!type) return null;
+    if (Array.isArray(type)) {
+        return type
+            .filter(t => t && t !== 'VerifiableCredential')
+            .join(',');
+    }
+    return (type === 'VerifiableCredential') ? null : String(type);
+}
+
 function normalizeRecordFromJwt(userId, jwt) {
     const { header, payload } = parseJwtUnsafe(jwt);
 
@@ -52,12 +70,11 @@ function normalizeRecordFromJwt(userId, jwt) {
         null;
 
     // type
-    let type = null;
-    if (Array.isArray(payload.vc?.type)) type = payload.vc.type.join(',');
-    else if (Array.isArray(payload.type)) type = payload.type.join(',');
-    else type = payload.vc?.type || payload.type || null;
+    const type = normalizeVcType(
+        payload.vc?.type ?? payload.type ?? null
+    );
 
-    // dates (оставляем строками; если числа — это unix сек.)
+    // dates
     const issuanceDate =
         payload.vc?.issuanceDate ??
         payload.issuanceDate ??
@@ -79,12 +96,11 @@ function normalizeRecordFromJwt(userId, jwt) {
         issuer,
         subject,
         type,
-        issuance_date: String(issuanceDate ?? ''),
-        expiration_date: String(expirationDate ?? '')
+        issuance_date: issuanceDate != null ? String(issuanceDate) : '',
+        expiration_date: expirationDate != null ? String(expirationDate) : '',
     };
 }
 
-/** Нормализуем запись из JSON-LD VC (не JWT) */
 function normalizeRecordFromJsonLd(userId, vc) {
     // issuer
     const issuer =
@@ -94,39 +110,33 @@ function normalizeRecordFromJsonLd(userId, vc) {
     const subject = vc.credentialSubject?.id ?? null;
 
     // type
-    let type = null;
-    if (Array.isArray(vc.type)) {
-        type = vc.type.filter(t => t !== 'VerifiableCredential').join(',');
-    } else {
-        type = vc.type || null;
-    }
+    const type = normalizeVcType(vc.type);
 
     // dates
-    const issuanceDate = vc.issuanceDate ?? null;
+    const issuanceDate = vc.issuanceDate ?? vc.validFrom ?? null;
     const expirationDate = vc.expirationDate ?? null;
 
     return {
         user_id: userId,
-        jwt: null, // у JSON-LD нет JWT
+        jwt: null,
         header_json: '{}',
         payload_json: JSON.stringify(vc || {}),
         issuer,
         subject,
         type,
-        issuance_date: String(issuanceDate ?? ''),
-        expiration_date: String(expirationDate ?? '')
+        issuance_date: issuanceDate != null ? String(issuanceDate) : '',
+        expiration_date: expirationDate != null ? String(expirationDate) : '',
     };
 }
 
-/** Вставляем запись в БД и возвращаем её */
 function insertCredentialRow(rec) {
     const db = getDb();
     const stmt = db.prepare(`
-        INSERT INTO credentials
-        (user_id, jwt, header_json, payload_json, issuer, subject, type, issuance_date, expiration_date)
-        VALUES
-            (?,       ?,   ?,           ?,            ?,      ?,       ?,    ?,             ?)
-    `);
+    INSERT INTO credentials
+      (user_id, jwt, header_json, payload_json, issuer, subject, type, issuance_date, expiration_date)
+    VALUES
+      (?,       ?,   ?,           ?,            ?,      ?,       ?,    ?,             ?)
+  `);
     const info = stmt.run(
         rec.user_id,
         rec.jwt,
@@ -141,26 +151,17 @@ function insertCredentialRow(rec) {
     return db.prepare('SELECT * FROM credentials WHERE id = ?').get(info.lastInsertRowid);
 }
 
-/** Старый API: импорт только JWT */
 function importCredential(userId, jwt) {
     const rec = normalizeRecordFromJwt(userId, jwt);
     return insertCredentialRow(rec);
 }
 
-/**
- * Универсальный импорт VC:
- *  - строка JWT (xxx.yyy.zzz)
- *  - строка JSON (W3C VC JSON-LD)
- *  - объект JSON (W3C VC JSON-LD)
- */
 function importCredentialAny(userId, input) {
-    // строка?
     if (typeof input === 'string') {
         if (looksLikeJwt(input)) {
             const rec = normalizeRecordFromJwt(userId, input);
             return insertCredentialRow(rec);
         }
-        // пробуем как JSON
         let obj;
         try {
             obj = JSON.parse(input);
@@ -170,8 +171,13 @@ function importCredentialAny(userId, input) {
         return importCredentialAny(userId, obj);
     }
 
-    // объект JSON-LD VC
-    if (input && typeof input === 'object' && (input['@context'] || input.type)) {
+    const wrappedJwt = extractJwtFromObject(input);
+    if (wrappedJwt) {
+        const rec = normalizeRecordFromJwt(userId, wrappedJwt);
+        return insertCredentialRow(rec);
+    }
+
+    if (input && typeof input === 'object' && (input['@context'] || input.type || input.credentialSubject)) {
         const rec = normalizeRecordFromJsonLd(userId, input);
         return insertCredentialRow(rec);
     }
@@ -179,7 +185,6 @@ function importCredentialAny(userId, input) {
     throw new Error('unsupported credential format');
 }
 
-/** Список сохранённых VC пользователя */
 function listCredentials(userId) {
     const db = getDb();
     return db
@@ -190,5 +195,5 @@ function listCredentials(userId) {
 module.exports = {
     importCredentialAny,
     importCredential,
-    listCredentials
+    listCredentials,
 };

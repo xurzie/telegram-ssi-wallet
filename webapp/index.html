@@ -7,7 +7,6 @@
 
     <style>
         :root{
-            /* Фоллбэки, если открыто вне Телеги */
             --tg-theme-bg-color:#0f1115;
             --tg-theme-text-color:#e6e6e6;
             --tg-theme-secondary-bg-color:#171a21;
@@ -15,74 +14,22 @@
             --tg-theme-button-color:#2b90d9;
             --tg-theme-button-text-color:#ffffff;
         }
-
         *{box-sizing:border-box}
-
-        html,body{
-            height:100%;
-            margin:0;
-            background:var(--tg-theme-bg-color, #0f1115);
-            color:var(--tg-theme-text-color, #e6e6e6);
-        }
-
-        body{
-            font-family:ui-sans-serif,system-ui,-apple-system,Segoe UI,Roboto,Arial;
-            padding:16px;
-            min-height:100vh;
-        }
-
+        html,body{height:100%;margin:0;background:var(--tg-theme-bg-color,#0f1115);color:var(--tg-theme-text-color,#e6e6e6)}
+        body{font-family:ui-sans-serif,system-ui,-apple-system,Segoe UI,Roboto,Arial;padding:16px;min-height:100vh}
         h2,h3{margin:0 0 12px}
-
-        .card{
-            background:var(--tg-theme-secondary-bg-color, #171a21);
-            border:1px solid var(--tg-theme-hint-color, #6b7280);
-            border-radius:14px;
-            padding:16px;
-            margin-bottom:16px;
-        }
-
-        .row{
-            display:grid;
-            grid-template-columns:1fr auto;
-            gap:8px;
-            align-items:center;
-        }
-
-        input,textarea{
-            width:100%;
-            padding:12px 14px;
-            border-radius:10px;
-            border:1px solid var(--tg-theme-hint-color, #6b7280);
-            background:var(--tg-theme-bg-color, #0f1115);
-            color:var(--tg-theme-text-color, #e6e6e6);
-            outline:none;
-        }
-        input::placeholder,textarea::placeholder{color:var(--tg-theme-hint-color, #6b7280)}
-
-        button{
-            padding:12px 16px;
-            border-radius:10px;
-            border:none;
-            background:var(--tg-theme-button-color, #2b90d9);
-            color:var(--tg-theme-button-text-color, #ffffff);
-            cursor:pointer;
-            font-weight:600;
-        }
+        .card{background:var(--tg-theme-secondary-bg-color,#171a21);border:1px solid var(--tg-theme-hint-color,#6b7280);border-radius:14px;padding:16px;margin-bottom:16px}
+        .row{display:grid;grid-template-columns:1fr auto;gap:8px;align-items:center}
+        .grid2{display:grid;grid-template-columns:1fr 1fr;gap:8px}
+        input,textarea{width:100%;padding:12px 14px;border-radius:10px;border:1px solid var(--tg-theme-hint-color,#6b7280);background:var(--tg-theme-bg-color,#0f1115);color:var(--tg-theme-text-color,#e6e6e6);outline:none}
+        input::placeholder,textarea::placeholder{color:var(--tg-theme-hint-color,#6b7280)}
+        button{padding:12px 16px;border-radius:10px;border:none;background:var(--tg-theme-button-color,#2b90d9);color:var(--tg-theme-button-text-color,#ffffff);cursor:pointer;font-weight:600}
         button:active{transform:translateY(1px)}
-
         pre{white-space:pre-wrap;word-break:break-word}
-        .muted{color:var(--tg-theme-hint-color, #6b7280);font-size:12px}
+        .muted{color:var(--tg-theme-hint-color,#6b7280);font-size:12px}
         .list{display:grid;gap:12px}
-        .badge{
-            display:inline-block;padding:2px 8px;
-            border:1px solid var(--tg-theme-hint-color, #6b7280);
-            border-radius:999px;font-size:12px;margin-right:6px;background:transparent
-        }
-
-        /* visually-hidden label helper */
-        .sr-only{
-            position:absolute!important;width:1px;height:1px;padding:0;margin:-1px;overflow:hidden;clip:rect(0,0,0,0);white-space:nowrap;border:0;
-        }
+        .badge{display:inline-block;padding:2px 8px;border:1px solid var(--tg-theme-hint-color,#6b7280);border-radius:999px;font-size:12px;margin-right:6px;background:transparent}
+        .sr-only{position:absolute!important;width:1px;height:1px;padding:0;margin:-1px;overflow:hidden;clip:rect(0,0,0,0);white-space:nowrap;border:0;}
     </style>
 
     <script src="https://telegram.org/js/telegram-web-app.js"></script>
@@ -99,7 +46,7 @@
 <div id="user" class="card"></div>
 
 <div class="card">
-    <h3>Import credential</h3>
+    <h3>Import credential (paste)</h3>
     <div class="row">
         <label class="sr-only" for="cred">Credential</label>
         <input id="cred" placeholder="Paste credential (JWT or JSON) here"/>
@@ -111,17 +58,34 @@
 <div class="card">
     <h3>Import from link</h3>
     <div class="row">
-        <input id="offer" placeholder="Paste iden3comm:// or wallet-staging link"/>
+        <input id="offer" placeholder="Paste iden3comm:// or https://wallet-staging… (or direct https VC URL)"/>
         <button id="btnOffer">Fetch & Import</button>
     </div>
-    <div class="muted">Вставь ссылку вида <code>iden3comm://?request_uri=…</code> или <code>wallet-staging.privado.id#request_uri=…</code>.</div>
+    <div class="muted">Вставь ссылку вида <code>iden3comm://?request_uri=…</code> / <code>…#request_uri=…</code> / прямой <code>https://…/v2/credentials/&lt;did&gt;/&lt;id&gt;</code>.</div>
+</div>
+
+<div class="card">
+    <h3>Import by issuerDid + credentialId</h3>
+    <div class="grid2" style="margin-bottom:8px">
+        <input id="issuerDid" placeholder="issuerDid (e.g. did:iden3:polygon:amoy:...)"/>
+        <input id="credId" placeholder="credentialId (uuid)"/>
+    </div>
+    <div class="grid2" style="margin-bottom:8px">
+        <input id="basicUser" placeholder="(optional) basic user"/>
+        <input id="basicPass" placeholder="(optional) basic pass" type="password"/>
+    </div>
+    <div class="row">
+        <div></div>
+        <button id="btnByIds">Fetch & Import</button>
+    </div>
+    <div class="muted">Если basic не указан — возьмём из .env на сервере.</div>
 </div>
 
 <div class="card">
     <h3>Authenticate with Verifier</h3>
     <div class="row">
         <label class="sr-only" for="requri">Verifier request_uri</label>
-        <input id="requri" placeholder="Paste request_uri from your Verifier QR"/>
+        <input id="requri" placeholder="Paste request_uri or full iden3comm/universal link"/>
         <button id="btnAuth">Authenticate</button>
     </div>
     <div id="authOut" class="muted"></div>
@@ -143,42 +107,47 @@
             headers:{'Content-Type':'application/json'},
             body:JSON.stringify(body)
         });
-        if(!res.ok) throw new Error((await res.json()).error || 'error');
+        if(!res.ok){
+            let err = 'error';
+            try{ err = (await res.json()).error || err; } catch(_){}
+            throw new Error(err);
+        }
         return res.json();
     }
     async function get(path){
         const res = await fetch(path);
-        if(!res.ok) throw new Error((await res.json()).error || 'error');
+        if(!res.ok){
+            let err = 'error';
+            try{ err = (await res.json()).error || err; } catch(_){}
+            throw new Error(err);
+        }
         return res.json();
     }
 
     const tgUserId = tg?.initDataUnsafe?.user?.id || prompt('Enter your Telegram user id (dev only):');
     const userDiv = document.getElementById('user');
     const listDiv = document.getElementById('list');
+
     const credInp = document.getElementById('cred');
     const btnImport = document.getElementById('btnImport');
-    const reqUri = document.getElementById('requri');
-    const btnAuth = document.getElementById('btnAuth');
-    const authOut = document.getElementById('authOut');
+
     const offerInp = document.getElementById('offer');
     const btnOffer = document.getElementById('btnOffer');
 
-    btnOffer && (btnOffer.onclick = async () => {
-        try {
-            const link = (offerInp.value || '').trim();
-            if (!link) return;
-            await post('/api/credentials/import-link', { tgUserId, link });
-            offerInp.value = '';
-            await load();
-        } catch (e) {
-            alert('Import from link failed: ' + e.message);
-        }
-    });
+    const issuerDidInp = document.getElementById('issuerDid');
+    const credIdInp = document.getElementById('credId');
+    const basicUserInp = document.getElementById('basicUser');
+    const basicPassInp = document.getElementById('basicPass');
+    const btnByIds = document.getElementById('btnByIds');
+
+    const reqUri = document.getElementById('requri');
+    const btnAuth = document.getElementById('btnAuth');
+    const authOut = document.getElementById('authOut');
 
     async function load(){
         const s = await post('/api/session', { tgUserId });
 
-        // Блок с DID + кнопка Copy
+        // User/DID
         userDiv.innerHTML =
             '<div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">' +
             '<div><b>User:</b> ' + tgUserId + '</div>' +
@@ -187,7 +156,7 @@
             '</div>' +
             '<div class="muted">Share this DID with your issuer to receive credentials.</div>';
 
-        // Обработчик копирования
+        // Copy DID
         const copyBtn = document.getElementById('copydid');
         copyBtn?.addEventListener('click', async () => {
             const did = document.getElementById('didval').textContent;
@@ -202,34 +171,37 @@
             }
         });
 
+        // List credentials
         const creds = await get('/api/credentials?tgUserId=' + encodeURIComponent(tgUserId));
-        renderList(creds.items);
+        renderList(creds.items || []);
     }
 
     function renderList(items){
         listDiv.innerHTML = '';
         if(!items.length){
-            listDiv.innerHTML = '<div class="muted">No credentials yet. Import a JWT above.</div>';
+            listDiv.innerHTML = '<div class="muted">No credentials yet. Import one above.</div>';
             return;
         }
         for(const it of items){
-            const p = JSON.parse(it.payload_json);
-            const h = JSON.parse(it.header_json);
+            let p = {};
+            let h = {};
+            try{ p = JSON.parse(it.payload_json || '{}'); }catch(_){}
+            try{ h = JSON.parse(it.header_json || '{}'); }catch(_){}
             const el = document.createElement('div');
             el.className = 'card';
             el.innerHTML = `
-          <div><span class="badge">${it.type || 'credential'}</span> <b>${p.vc?.credentialSubject?.id || p.sub || ''}</b></div>
-          <div class="muted">issuer: ${it.issuer || ''}</div>
-          <details><summary>Payload</summary><pre>${JSON.stringify(p, null, 2)}</pre></details>
-          <details><summary>Header</summary><pre>${JSON.stringify(h, null, 2)}</pre></details>
-        `;
+        <div><span class="badge">${it.type || 'credential'}</span> <b>${p.vc?.credentialSubject?.id || p.sub || ''}</b></div>
+        <div class="muted">issuer: ${it.issuer || ''}</div>
+        <details><summary>Payload</summary><pre>${JSON.stringify(p, null, 2)}</pre></details>
+        <details><summary>Header</summary><pre>${JSON.stringify(h, null, 2)}</pre></details>
+      `;
             listDiv.appendChild(el);
         }
     }
 
     btnImport.onclick = async () => {
         try{
-            const cred = credInp.value.trim();
+            const cred = (credInp.value || '').trim();
             if(!cred) return;
             await post('/api/credentials/import', { tgUserId, credential: cred });
             credInp.value = '';
@@ -239,10 +211,41 @@
         }
     };
 
+    btnOffer && (btnOffer.onclick = async () => {
+        try {
+            const link = (offerInp.value || '').trim();
+            if (!link) return;
+            await post('/api/credentials/import-link', { tgUserId, link });
+            offerInp.value = '';
+            await load();
+        } catch (e) {
+            alert('Import from link failed: ' + e.message);
+        }
+    });
+
+    btnByIds && (btnByIds.onclick = async () => {
+        try {
+            const issuerDid = (issuerDidInp.value || '').trim();
+            const credentialId = (credIdInp.value || '').trim();
+            if (!issuerDid || !credentialId) throw new Error('issuerDid and credentialId required');
+            const basic = {};
+            if (basicUserInp.value) basic.user = basicUserInp.value;
+            if (basicPassInp.value) basic.pass = basicPassInp.value;
+            await post('/api/credentials/import-link', {
+                tgUserId, issuerDid, credentialId, ...(Object.keys(basic).length ? { basic } : {})
+            });
+            issuerDidInp.value = '';
+            credIdInp.value = '';
+            await load();
+        } catch (e) {
+            alert('Import by ids failed: ' + e.message);
+        }
+    });
+
     btnAuth.onclick = async () => {
         try{
             authOut.textContent = 'Preparing...';
-            const requestUri = reqUri.value.trim();
+            const requestUri = (reqUri.value || '').trim();
             if(!requestUri) throw new Error('request_uri required');
             const out = await post('/api/auth', { tgUserId, requestUri });
             authOut.textContent = 'Auth response (jwt): ' + out.token + (out.mode ? ' ['+out.mode+']' : '');
