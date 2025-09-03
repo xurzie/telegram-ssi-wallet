@@ -88,19 +88,12 @@ npm i @0xpolygonid/js-sdk
 > Tip: see the js-sdk test you were given for a working reference:
 > `tests/handlers/auth.test.ts`
 
----
+##Install circuits and unzip them into ./circuits:
 
-## Verifier (Week #2)
+```bash
+curl -LO https://circuits.privado.id/latest.zip
+mkdir -p ./circuits
+unzip -o latest.zip -d ./circuits
+```
 
-- Open your verifier page and **copy the `request_uri`** behind the QR.
-- In the wallet WebApp, paste it into the **Authenticate** field and submit.
-- With js-sdk integrated, you’ll return a valid **Auth Response JWT** and pass checks.
-
----
-
-## Security notes (dev starter)
-
-- This is a barebones dev template. Don’t ship to prod as‑is.
-- Add key management, encrypt storage, CSRF protection, strict CORS, proper session handling.
-- Never commit your bot token or real secrets.
 # telegram-ssi-wallet
