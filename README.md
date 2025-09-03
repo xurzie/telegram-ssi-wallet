@@ -88,7 +88,7 @@ npm i @0xpolygonid/js-sdk
 > Tip: see the js-sdk test you were given for a working reference:
 > `tests/handlers/auth.test.ts`
 
-##Install circuits and unzip them into ./circuits:
+## Install circuits and unzip them into ./circuits:
 
 ```bash
 curl -LO https://circuits.privado.id/latest.zip
