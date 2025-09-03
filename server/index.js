@@ -121,18 +121,18 @@ async function fetchCredentialByIssuerAndId(baseUrl, issuerDid, credentialId, di
     };
 
     const urls = [
-        // v2 (DID в path)
+        // v2 (DID in path)
         `${base}/v2/credentials/${encDid}/${encId}`,
         `${base}/v2/credentials/${encDid}/${encId}?repr=jwt`,
-        // v2 (DID в query)
+        // v2 (DID in query)
         `${base}/v2/credentials/${encId}?issuer=${encDid}`,
         `${base}/v2/credentials/${encId}?issuer=${encDid}&repr=jwt`,
-        // v2 (иногда "claims" вместо "credentials")
+        // v2 ("claims" instead "credentials")
         `${base}/v2/claims/${encId}?issuer=${encDid}`,
-        // v1 (DID в path)
+        // v1 (DID in path)
         `${base}/v1/${encDid}/claims/${encId}`,
         `${base}/v1/${encDid}/claims/${encId}?repr=jwt`,
-        // v1 (DID в query)
+        // v1 (DID in query)
         `${base}/v1/claims/${encId}?issuer=${encDid}`,
         `${base}/v1/claims/${encId}?issuer=${encDid}&repr=jwt`,
         // v1 (alt)
@@ -455,7 +455,7 @@ app.post('/api/auth', async (req, res) => {
                     console.log('callback try:', t.label, '→', r.status, (bodyTxt || '').slice(0, 200));
                     callbackStatus = r.status;
                     callbackBody = bodyTxt.slice(0, 8192);
-                    if (r.ok) break; // успех — выходим
+                    if (r.ok) break; 
                     lastErr = new Error(`callback ${r.status}`);
                 } catch (e) {
                     lastErr = e;
@@ -471,7 +471,7 @@ app.post('/api/auth', async (req, res) => {
                 try {
                     let msg = null;
                     if (!offerLike) return;
-                    // если JSON
+                    // if JSON
                     if (offerLike.trim().startsWith('{')) {
                         msg = JSON.parse(offerLike);
                     } else {
